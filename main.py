@@ -129,19 +129,35 @@ class ZohoDeskAPI:
                 # Now update the ticket to make it visible
                 ticket_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
 
-                # Update ticket to reopen and prioritize
-                ticket_update = {
-                    'status': 'Open',  # Reopen if closed
-                    'priority': 'High',  # Escalate priority for SMS
-                    'subject': f"📱 SMS REPLY - Original Subject"  # Add SMS indicator to subject
-                }
+                # First get the current ticket to preserve subject
+                get_response = requests.get(ticket_url, headers=headers, timeout=30)
+                if get_response.status_code == 200:
+                    current_ticket = get_response.json()
+                    original_subject = current_ticket.get('subject', 'Support Ticket')
 
-                update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
+                    # Update ticket to reopen and prioritize
+                    ticket_update = {
+                        'status': 'Open',  # Reopen if closed
+                        'priority': 'High',  # Escalate priority for SMS
+                        'subject': f"📱 SMS REPLY: {original_subject}",  # Add SMS indicator to subject
+                        'modifiedTime': datetime.now().isoformat()  # Force update timestamp
+                    }
+
+                    update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
+                else:
+                    # Fallback if we can't get current ticket
+                    ticket_update = {
+                        'status': 'Open',
+                        'priority': 'High',
+                        'modifiedTime': datetime.now().isoformat()
+                    }
+
+                    update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
 
                 if update_response.status_code == 200:
-                    logging.info(f"Successfully reopened and prioritized ticket {ticket_id}")
+                    logging.info(f"Successfully reopened and prioritized ticket {ticket_id} - Status: Open, Priority: High")
                 else:
-                    logging.warning(f"Comment added but failed to update ticket status: {update_response.status_code}")
+                    logging.warning(f"Comment added but failed to update ticket status: {update_response.status_code} - {update_response.text}")
 
                 return {
                     'success': True,
