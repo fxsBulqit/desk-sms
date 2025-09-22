@@ -139,8 +139,7 @@ class ZohoDeskAPI:
                     ticket_update = {
                         'status': 'Open',  # Reopen if closed
                         'priority': 'High',  # Escalate priority for SMS
-                        'subject': f"📱 SMS REPLY: {original_subject}",  # Add SMS indicator to subject
-                        'modifiedTime': datetime.now().isoformat()  # Force update timestamp
+                        'subject': f"📱 SMS REPLY: {original_subject}"  # Add SMS indicator to subject
                     }
 
                     update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
