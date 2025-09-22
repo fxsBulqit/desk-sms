@@ -101,10 +101,11 @@ class ZohoDeskAPI:
             return []
 
     def add_comment_to_ticket(self, ticket_id, message_body, phone_number):
-        """Add SMS as comment to existing ticket"""
+        """Add SMS as comment to existing ticket and reopen/prioritize it"""
         self.ensure_valid_token()
 
-        url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/comments"
+        # First, add the comment
+        comment_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/comments"
 
         headers = {
             'Authorization': f'Zoho-oauthtoken {self.access_token}',
@@ -113,27 +114,46 @@ class ZohoDeskAPI:
         }
 
         comment_data = {
-            'content': f"📱 SMS received from {phone_number}:\n\n{message_body}\n\nTimestamp: {datetime.now().isoformat()}",
+            'content': f"📱 NEW SMS from {phone_number}:\n\n{message_body}\n\nTimestamp: {datetime.now().isoformat()}",
             'contentType': 'plainText',
             'isPublic': True
         }
 
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(comment_data), timeout=30)
-            result = response.json()
+            comment_response = requests.post(comment_url, headers=headers, data=json.dumps(comment_data), timeout=30)
+            comment_result = comment_response.json()
 
-            if response.status_code == 200 and 'id' in result:
+            if comment_response.status_code == 200 and 'id' in comment_result:
                 logging.info(f"Successfully added comment to ticket {ticket_id}")
+
+                # Now update the ticket to make it visible
+                ticket_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
+
+                # Update ticket to reopen and prioritize
+                ticket_update = {
+                    'status': 'Open',  # Reopen if closed
+                    'priority': 'High',  # Escalate priority for SMS
+                    'subject': f"📱 SMS REPLY - Original Subject"  # Add SMS indicator to subject
+                }
+
+                update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
+
+                if update_response.status_code == 200:
+                    logging.info(f"Successfully reopened and prioritized ticket {ticket_id}")
+                else:
+                    logging.warning(f"Comment added but failed to update ticket status: {update_response.status_code}")
+
                 return {
                     'success': True,
-                    'comment_id': result['id'],
-                    'ticket_id': ticket_id
+                    'comment_id': comment_result['id'],
+                    'ticket_id': ticket_id,
+                    'ticket_updated': update_response.status_code == 200
                 }
             else:
-                logging.error(f"Failed to add comment: {result}")
+                logging.error(f"Failed to add comment: {comment_result}")
                 return {
                     'success': False,
-                    'error': result
+                    'error': comment_result
                 }
         except Exception as e:
             logging.error(f"Error adding comment: {str(e)}")
