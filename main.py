@@ -4,9 +4,41 @@ import requests
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import logging
+from twilio.rest import Client
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+class TwilioSMS:
+    def __init__(self):
+        # TODO: Add your Twilio credentials here
+        self.account_sid = "YOUR_TWILIO_ACCOUNT_SID"
+        self.auth_token = "YOUR_TWILIO_AUTH_TOKEN"
+        self.messaging_service_sid = "YOUR_MESSAGING_SERVICE_SID"
+
+        self.client = Client(self.account_sid, self.auth_token)
+
+    def send_sms(self, to_phone, message_body):
+        """Send SMS using Twilio Messaging Service"""
+        try:
+            message = self.client.messages.create(
+                messaging_service_sid=self.messaging_service_sid,
+                body=message_body,
+                to=to_phone
+            )
+
+            logging.info(f"SMS sent successfully to {to_phone}: {message.sid}")
+            return {
+                'success': True,
+                'message_sid': message.sid,
+                'to': to_phone
+            }
+        except Exception as e:
+            logging.error(f"Failed to send SMS to {to_phone}: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
 
 class ZohoDeskAPI:
     def __init__(self):
@@ -51,6 +83,39 @@ class ZohoDeskAPI:
         """Ensure we have a valid access token"""
         if not self.access_token or datetime.now() >= self.token_expires_at:
             self.get_access_token()
+
+    def get_ticket_phone_number(self, ticket_id):
+        """Extract phone number from ticket contact information"""
+        self.ensure_valid_token()
+
+        url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
+
+        headers = {
+            'Authorization': f'Zoho-oauthtoken {self.access_token}',
+            'orgId': self.org_id
+        }
+
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            if response.status_code == 200:
+                ticket = response.json()
+                if 'contact' in ticket and ticket['contact']:
+                    phone = ticket['contact'].get('phone', '')
+                    if phone:
+                        logging.info(f"Found phone number {phone} for ticket {ticket_id}")
+                        return phone
+                    else:
+                        logging.warning(f"No phone number found for ticket {ticket_id}")
+                        return None
+                else:
+                    logging.warning(f"No contact information found for ticket {ticket_id}")
+                    return None
+            else:
+                logging.error(f"Failed to get ticket {ticket_id}: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            logging.error(f"Error getting ticket {ticket_id}: {str(e)}")
+            return None
 
     def search_tickets_by_phone(self, phone_number):
         """Search for existing tickets by phone number"""
@@ -244,8 +309,9 @@ class ZohoDeskAPI:
                 'error': str(e)
             }
 
-# Lazy initialization - create API connection when needed
+# Lazy initialization - create API connections when needed
 zoho_api = None
+twilio_sms = None
 
 def get_zoho_api():
     global zoho_api
@@ -256,6 +322,16 @@ def get_zoho_api():
             logging.error(f"Failed to initialize Zoho API: {str(e)}")
             return None
     return zoho_api
+
+def get_twilio_sms():
+    global twilio_sms
+    if twilio_sms is None:
+        try:
+            twilio_sms = TwilioSMS()
+        except Exception as e:
+            logging.error(f"Failed to initialize Twilio SMS: {str(e)}")
+            return None
+    return twilio_sms
 
 @app.route('/', methods=['GET'])
 def health_check():
@@ -329,6 +405,60 @@ def sms_webhook():
 
     except Exception as e:
         logging.error(f"Error processing SMS webhook: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+@app.route('/send-sms', methods=['POST'])
+def send_sms_endpoint():
+    """Send SMS reply from Zoho Desk agent response"""
+    zoho_api = get_zoho_api()
+    twilio_api = get_twilio_sms()
+
+    if not zoho_api:
+        return jsonify({'error': 'Zoho API not initialized'}), 500
+    if not twilio_api:
+        return jsonify({'error': 'Twilio SMS not initialized'}), 500
+
+    try:
+        # Get webhook data from Zoho Desk
+        webhook_data = request.get_json() or {}
+
+        # Extract ticket ID and comment content from webhook
+        ticket_id = webhook_data.get('ticketId') or webhook_data.get('ticket_id')
+        comment_content = webhook_data.get('content') or webhook_data.get('message', '')
+
+        if not ticket_id:
+            return jsonify({'error': 'Missing ticket ID'}), 400
+        if not comment_content:
+            return jsonify({'error': 'Missing message content'}), 400
+
+        # Get phone number from ticket
+        phone_number = zoho_api.get_ticket_phone_number(ticket_id)
+        if not phone_number:
+            return jsonify({'error': 'No phone number found for this ticket'}), 400
+
+        # Send SMS
+        result = twilio_api.send_sms(phone_number, comment_content)
+
+        if result['success']:
+            logging.info(f"SMS reply sent to {phone_number} for ticket {ticket_id}")
+            return jsonify({
+                'success': True,
+                'message_sid': result['message_sid'],
+                'to': phone_number,
+                'ticket_id': ticket_id
+            })
+        else:
+            logging.error(f"Failed to send SMS reply: {result['error']}")
+            return jsonify({
+                'success': False,
+                'error': result['error']
+            }), 500
+
+    except Exception as e:
+        logging.error(f"Error in send-sms endpoint: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'Internal server error'
