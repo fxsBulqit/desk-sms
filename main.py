@@ -113,8 +113,12 @@ class ZohoDeskAPI:
             'Content-Type': 'application/json'
         }
 
+        # Format timestamp nicely
+        now = datetime.now()
+        formatted_time = now.strftime("%B %d, %Y at %I:%M %p")
+
         comment_data = {
-            'content': f"📱 NEW SMS from {phone_number}:\n\n{message_body}\n\nTimestamp: {datetime.now().isoformat()}",
+            'content': f"📱 **NEW SMS from {phone_number}**\n\n{message_body}\n\n*Received: {formatted_time}*",
             'contentType': 'plainText',
             'isPublic': True
         }
@@ -136,10 +140,16 @@ class ZohoDeskAPI:
                     original_subject = current_ticket.get('subject', 'Support Ticket')
 
                     # Update ticket to reopen and prioritize
+                    # Only add SMS prefix if not already present
+                    if not original_subject.startswith("📱 SMS REPLY:"):
+                        new_subject = f"📱 SMS REPLY: {original_subject}"
+                    else:
+                        new_subject = original_subject
+
                     ticket_update = {
                         'status': 'Open',  # Reopen if closed
                         'priority': 'High',  # Escalate priority for SMS
-                        'subject': f"📱 SMS REPLY: {original_subject}"  # Add SMS indicator to subject
+                        'subject': new_subject
                     }
 
                     update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
@@ -193,7 +203,11 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        description = f"SMS received from {phone_number}:\n\n{message_body}\n\nTimestamp: {datetime.now().isoformat()}"
+        # Format timestamp nicely for new tickets too
+        now = datetime.now()
+        formatted_time = now.strftime("%B %d, %Y at %I:%M %p")
+
+        description = f"📱 **SMS received from {phone_number}**\n\n{message_body}\n\n*Received: {formatted_time}*"
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
