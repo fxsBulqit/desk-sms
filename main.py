@@ -13,7 +13,7 @@ class ZohoDeskAPI:
         # Hard-coded credentials
         self.client_id = "1000.YTGWJ9XNXKTX7QQCW3CJYG7KLF6KHG"
         self.client_secret = "7df24f3a04d94a67a1b8a53ebb53afcd913b927ba7"
-        self.refresh_token = "1000.9587a87547cda70ae7e90764e5418919.2b57a6000a4faf52a8e2baace256a44b"
+        self.refresh_token = "1000.40a4b2d6218f6da98702a2ff7f2cd87e.733a08fb92aa860badec806c9016a694"
         self.org_id = "884904605"
         self.department_id = "1121831000000006907"
 
@@ -56,28 +56,43 @@ class ZohoDeskAPI:
         """Search for existing tickets by phone number"""
         self.ensure_valid_token()
 
-        url = "https://desk.zoho.com/api/v1/tickets/search"
+        # First, let's try to get all tickets for this contact
+        # We'll search using the tickets endpoint with contact phone filter
+        url = "https://desk.zoho.com/api/v1/tickets"
 
         headers = {
             'Authorization': f'Zoho-oauthtoken {self.access_token}',
-            'orgId': self.org_id,
-            'Content-Type': 'application/json'
+            'orgId': self.org_id
         }
 
-        # Search by phone number in contact
+        # Clean phone number for search
+        clean_phone = phone_number.replace('+', '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+
         params = {
-            'phone': phone_number.replace('+', '').replace(' ', '').replace('-', ''),
             'sortBy': 'modifiedTime',
-            'limit': 100
+            'limit': 50,
+            'include': 'contacts'
         }
 
         try:
             response = requests.get(url, headers=headers, params=params, timeout=30)
             if response.status_code == 200:
                 result = response.json()
-                tickets = result.get('data', [])
-                logging.info(f"Found {len(tickets)} existing tickets for {phone_number}")
-                return tickets
+                all_tickets = result.get('data', [])
+
+                # Filter tickets by phone number
+                matching_tickets = []
+                for ticket in all_tickets:
+                    if 'contact' in ticket and ticket['contact']:
+                        contact_phone = ticket['contact'].get('phone', '')
+                        if contact_phone:
+                            # Clean the contact phone for comparison
+                            clean_contact_phone = contact_phone.replace('+', '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+                            if clean_phone in clean_contact_phone or clean_contact_phone in clean_phone:
+                                matching_tickets.append(ticket)
+
+                logging.info(f"Found {len(matching_tickets)} existing tickets for {phone_number}")
+                return matching_tickets
             else:
                 logging.warning(f"Search failed: {response.status_code} - {response.text}")
                 return []
