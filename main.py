@@ -52,6 +52,81 @@ class ZohoDeskAPI:
         if not self.access_token or datetime.now() >= self.token_expires_at:
             self.get_access_token()
 
+    def search_tickets_by_phone(self, phone_number):
+        """Search for existing tickets by phone number"""
+        self.ensure_valid_token()
+
+        url = "https://desk.zoho.com/api/v1/tickets/search"
+
+        headers = {
+            'Authorization': f'Zoho-oauthtoken {self.access_token}',
+            'orgId': self.org_id,
+            'Content-Type': 'application/json'
+        }
+
+        # Search by phone number in contact
+        params = {
+            'phone': phone_number.replace('+', '').replace(' ', '').replace('-', ''),
+            'sortBy': 'modifiedTime',
+            'limit': 100
+        }
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                result = response.json()
+                tickets = result.get('data', [])
+                logging.info(f"Found {len(tickets)} existing tickets for {phone_number}")
+                return tickets
+            else:
+                logging.warning(f"Search failed: {response.status_code} - {response.text}")
+                return []
+        except Exception as e:
+            logging.error(f"Error searching tickets: {str(e)}")
+            return []
+
+    def add_comment_to_ticket(self, ticket_id, message_body, phone_number):
+        """Add SMS as comment to existing ticket"""
+        self.ensure_valid_token()
+
+        url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/comments"
+
+        headers = {
+            'Authorization': f'Zoho-oauthtoken {self.access_token}',
+            'orgId': self.org_id,
+            'Content-Type': 'application/json'
+        }
+
+        comment_data = {
+            'content': f"📱 SMS received from {phone_number}:\n\n{message_body}\n\nTimestamp: {datetime.now().isoformat()}",
+            'contentType': 'plainText',
+            'isPublic': True
+        }
+
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(comment_data), timeout=30)
+            result = response.json()
+
+            if response.status_code == 200 and 'id' in result:
+                logging.info(f"Successfully added comment to ticket {ticket_id}")
+                return {
+                    'success': True,
+                    'comment_id': result['id'],
+                    'ticket_id': ticket_id
+                }
+            else:
+                logging.error(f"Failed to add comment: {result}")
+                return {
+                    'success': False,
+                    'error': result
+                }
+        except Exception as e:
+            logging.error(f"Error adding comment: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def create_ticket_from_sms(self, phone_number, message_body, sender_name=None):
         """Create a ticket in Zoho Desk from SMS data"""
         self.ensure_valid_token()
@@ -151,13 +226,41 @@ def sms_webhook():
         # Return quick response to Twilio to avoid timeout
         # Then process ticket creation asynchronously
 
-        # Create ticket in Zoho Desk with shorter timeout
-        result = api.create_ticket_from_sms(phone_number, message_body, sender_name)
+        # Check for existing tickets from this phone number first
+        existing_tickets = api.search_tickets_by_phone(phone_number)
+
+        if existing_tickets:
+            # Add SMS as comment to most recent ticket
+            most_recent_ticket = existing_tickets[0]  # Already sorted by modifiedTime
+            ticket_id = most_recent_ticket['id']
+            ticket_number = most_recent_ticket['ticketNumber']
+
+            logging.info(f"Adding SMS to existing ticket #{ticket_number} (ID: {ticket_id})")
+            result = api.add_comment_to_ticket(ticket_id, message_body, phone_number)
+
+            if result['success']:
+                logging.info(f"SMS added as comment to ticket #{ticket_number}")
+                return jsonify({
+                    'success': True,
+                    'action': 'comment_added',
+                    'ticket_id': ticket_id,
+                    'ticket_number': ticket_number,
+                    'comment_id': result['comment_id']
+                })
+            else:
+                # Fall back to creating new ticket if comment fails
+                logging.warning(f"Failed to add comment, creating new ticket instead")
+                result = api.create_ticket_from_sms(phone_number, message_body, sender_name)
+        else:
+            # No existing tickets, create new one
+            logging.info(f"No existing tickets found for {phone_number}, creating new ticket")
+            result = api.create_ticket_from_sms(phone_number, message_body, sender_name)
 
         if result['success']:
             logging.info(f"Ticket created successfully: #{result['ticket_number']}")
             return jsonify({
                 'success': True,
+                'action': 'new_ticket_created',
                 'ticket_id': result['ticket_id'],
                 'ticket_number': result['ticket_number']
             })
