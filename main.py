@@ -147,8 +147,7 @@ class ZohoDeskAPI:
                     # Fallback if we can't get current ticket
                     ticket_update = {
                         'status': 'Open',
-                        'priority': 'High',
-                        'modifiedTime': datetime.now().isoformat()
+                        'priority': 'High'
                     }
 
                     update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
