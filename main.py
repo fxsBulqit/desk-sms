@@ -139,17 +139,10 @@ class ZohoDeskAPI:
                     current_ticket = get_response.json()
                     original_subject = current_ticket.get('subject', 'Support Ticket')
 
-                    # Update ticket to reopen and prioritize
-                    # Only add SMS prefix if not already present
-                    if not original_subject.startswith("📱 SMS REPLY:"):
-                        new_subject = f"📱 SMS REPLY: {original_subject}"
-                    else:
-                        new_subject = original_subject
-
+                    # Update ticket to reopen and prioritize (don't change subject)
                     ticket_update = {
                         'status': 'Open',  # Reopen if closed
-                        'priority': 'High',  # Escalate priority for SMS
-                        'subject': new_subject
+                        'priority': 'High'  # Escalate priority for SMS
                     }
 
                     update_response = requests.patch(ticket_url, headers=headers, data=json.dumps(ticket_update), timeout=30)
