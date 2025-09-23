@@ -11,10 +11,12 @@ logging.basicConfig(level=logging.INFO)
 
 class TwilioSMS:
     def __init__(self):
-        # TODO: Add your Twilio credentials here
-        self.account_sid = "YOUR_TWILIO_ACCOUNT_SID"
-        self.auth_token = "YOUR_TWILIO_AUTH_TOKEN"
-        self.messaging_service_sid = "YOUR_MESSAGING_SERVICE_SID"
+        self.account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+        self.auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
+        self.messaging_service_sid = os.environ.get('TWILIO_MESSAGING_SERVICE_SID')
+
+        if not all([self.account_sid, self.auth_token, self.messaging_service_sid]):
+            raise Exception("Missing Twilio environment variables")
 
         self.client = Client(self.account_sid, self.auth_token)
 
@@ -425,9 +427,22 @@ def send_sms_endpoint():
         # Get webhook data from Zoho Desk
         webhook_data = request.get_json() or {}
 
-        # Extract ticket ID and comment content from webhook
-        ticket_id = webhook_data.get('ticketId') or webhook_data.get('ticket_id')
-        comment_content = webhook_data.get('content') or webhook_data.get('message', '')
+        # Handle Zoho webhook format (array with payload object)
+        if isinstance(webhook_data, list) and len(webhook_data) > 0:
+            event_data = webhook_data[0]
+            payload = event_data.get('payload', {})
+
+            ticket_id = payload.get('ticketId')
+            # Strip HTML from comment content to get plain text
+            import re
+            comment_content = payload.get('content', '')
+            comment_content = re.sub('<[^<]+?>', '', comment_content)  # Remove HTML tags
+            comment_content = comment_content.strip()
+
+        else:
+            # Fallback for direct API calls (testing)
+            ticket_id = webhook_data.get('ticketId') or webhook_data.get('ticket_id')
+            comment_content = webhook_data.get('content') or webhook_data.get('message', '')
 
         if not ticket_id:
             return jsonify({'error': 'Missing ticket ID'}), 400
