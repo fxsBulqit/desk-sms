@@ -201,11 +201,11 @@ class ZohoDeskAPI:
             'Content-Type': 'application/json'
         }
 
-        # Add hidden marker to identify SMS comments and prevent feedback loops
+        # Add subtle identifier for SMS comments
         comment_data = {
-            'content': f"{message_body}",
+            'content': f"📱 {message_body}",
             'contentType': 'plainText',
-            'isPublic': False  # Make SMS comments private to avoid webhook triggers
+            'isPublic': False
         }
 
         try:
@@ -281,7 +281,7 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        description = message_body
+        description = f"📱 {message_body}"
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
@@ -468,12 +468,10 @@ def send_sms_endpoint():
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
-            # SMS comments are marked as private (isPublic: false)
-            is_public = payload.get('isPublic', True)
-
-            if not is_public:
-                logging.info(f"Skipping private comment (SMS): '{comment_content[:50]}...'")
-                return jsonify({'message': 'Private comment skipped - no feedback loop'}), 200
+            # Check if comment starts with SMS emoji identifier
+            if comment_content.startswith('📱'):
+                logging.info(f"Skipping SMS comment: '{comment_content[:50]}...'")
+                return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
 
             logging.info(f"Parsed from webhook: ticket_id={ticket_id}, content='{comment_content}'")
 
