@@ -474,6 +474,11 @@ def send_sms_endpoint():
             comment_content = re.sub('<[^<]+?>', '', comment_content)  # Remove HTML tags
             comment_content = comment_content.strip()
 
+            # Skip SMS-generated comments to avoid feedback loops
+            if comment_content.startswith('📱') or 'NEW SMS from' in comment_content or 'SMS received from' in comment_content:
+                logging.info(f"Skipping SMS-generated comment: '{comment_content[:50]}...'")
+                return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
+
             logging.info(f"Parsed from webhook: ticket_id={ticket_id}, content='{comment_content}'")
 
         else:
