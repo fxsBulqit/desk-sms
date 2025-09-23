@@ -412,9 +412,14 @@ def sms_webhook():
             'error': 'Internal server error'
         }), 500
 
-@app.route('/send-sms', methods=['POST'])
+@app.route('/send-sms', methods=['GET', 'POST'])
 def send_sms_endpoint():
     """Send SMS reply from Zoho Desk agent response"""
+
+    # Handle GET requests (webhook validation)
+    if request.method == 'GET':
+        return jsonify({'status': 'Webhook endpoint ready'}), 200
+
     zoho_api = get_zoho_api()
     twilio_api = get_twilio_sms()
 
