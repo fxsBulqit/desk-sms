@@ -329,7 +329,15 @@ def get_twilio_sms():
     global twilio_sms
     if twilio_sms is None:
         try:
+            # Debug environment variables
+            account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+            auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
+            messaging_service_sid = os.environ.get('TWILIO_MESSAGING_SERVICE_SID')
+
+            logging.info(f"Twilio env vars: SID={account_sid[:8]}..., TOKEN={'SET' if auth_token else 'MISSING'}, MSG_SID={messaging_service_sid[:8] if messaging_service_sid else 'MISSING'}")
+
             twilio_sms = TwilioSMS()
+            logging.info("Twilio SMS initialized successfully")
         except Exception as e:
             logging.error(f"Failed to initialize Twilio SMS: {str(e)}")
             return None
@@ -431,6 +439,7 @@ def send_sms_endpoint():
     try:
         # Get webhook data from Zoho Desk
         webhook_data = request.get_json() or {}
+        logging.info(f"Received webhook data: {json.dumps(webhook_data)[:500]}...")
 
         # Handle Zoho webhook format (array with payload object)
         if isinstance(webhook_data, list) and len(webhook_data) > 0:
@@ -444,14 +453,19 @@ def send_sms_endpoint():
             comment_content = re.sub('<[^<]+?>', '', comment_content)  # Remove HTML tags
             comment_content = comment_content.strip()
 
+            logging.info(f"Parsed from webhook: ticket_id={ticket_id}, content='{comment_content}'")
+
         else:
             # Fallback for direct API calls (testing)
             ticket_id = webhook_data.get('ticketId') or webhook_data.get('ticket_id')
             comment_content = webhook_data.get('content') or webhook_data.get('message', '')
+            logging.info(f"Parsed from direct call: ticket_id={ticket_id}, content='{comment_content}'")
 
         if not ticket_id:
+            logging.error("Missing ticket ID in webhook data")
             return jsonify({'error': 'Missing ticket ID'}), 400
         if not comment_content:
+            logging.error("Missing message content in webhook data")
             return jsonify({'error': 'Missing message content'}), 400
 
         # Get phone number from ticket
