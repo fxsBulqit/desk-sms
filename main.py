@@ -201,9 +201,10 @@ class ZohoDeskAPI:
             'Content-Type': 'application/json'
         }
 
+        # Add hidden marker to identify SMS comments and prevent feedback loops
         comment_data = {
-            'content': f"\n\n{message_body}",
-            'contentType': 'plainText',
+            'content': f"{message_body}<!-- SMS_GENERATED -->",
+            'contentType': 'html',
             'isPublic': True
         }
 
@@ -280,7 +281,7 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        description = f"📱 **{phone_number}**\n\n{message_body}"
+        description = message_body
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
@@ -467,7 +468,9 @@ def send_sms_endpoint():
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
-            if comment_content.startswith('📱'):
+            # Check for hidden SMS marker in the HTML content
+            raw_content = payload.get('content', '')
+            if '<!-- SMS_GENERATED -->' in raw_content:
                 logging.info(f"Skipping SMS-generated comment: '{comment_content[:50]}...'")
                 return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
 
