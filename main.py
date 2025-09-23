@@ -101,17 +101,38 @@ class ZohoDeskAPI:
             response = requests.get(url, headers=headers, timeout=30)
             if response.status_code == 200:
                 ticket = response.json()
+
+                subject = ticket.get('subject', '')
+                description = ticket.get('description', '')
+                logging.info(f"Ticket {ticket_id}: subject='{subject}'")
+
+                # Try contact phone first
                 if 'contact' in ticket and ticket['contact']:
                     phone = ticket['contact'].get('phone', '')
                     if phone:
-                        logging.info(f"Found phone number {phone} for ticket {ticket_id}")
+                        logging.info(f"Found phone number {phone} in contact for ticket {ticket_id}")
                         return phone
-                    else:
-                        logging.warning(f"No phone number found for ticket {ticket_id}")
-                        return None
-                else:
-                    logging.warning(f"No contact information found for ticket {ticket_id}")
-                    return None
+
+                # Extract from subject (format: "SMS from +1234567890")
+                if 'SMS from' in subject:
+                    import re
+                    phone_match = re.search(r'\+\d{10,15}', subject)
+                    if phone_match:
+                        phone = phone_match.group()
+                        logging.info(f"Found phone number {phone} in subject for ticket {ticket_id}")
+                        return phone
+
+                # Extract from description as backup
+                if description:
+                    import re
+                    phone_match = re.search(r'\+\d{10,15}', description)
+                    if phone_match:
+                        phone = phone_match.group()
+                        logging.info(f"Found phone number {phone} in description for ticket {ticket_id}")
+                        return phone
+
+                logging.warning(f"No phone number found for ticket {ticket_id}")
+                return None
             else:
                 logging.error(f"Failed to get ticket {ticket_id}: {response.status_code} - {response.text}")
                 return None
