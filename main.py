@@ -202,7 +202,7 @@ class ZohoDeskAPI:
         }
 
         comment_data = {
-            'content': f"📱 **{phone_number}**\n\n{message_body}",
+            'content': f"\n\n{message_body}",
             'contentType': 'plainText',
             'isPublic': True
         }
