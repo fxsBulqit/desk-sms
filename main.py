@@ -203,9 +203,9 @@ class ZohoDeskAPI:
 
         # Add hidden marker to identify SMS comments and prevent feedback loops
         comment_data = {
-            'content': f"{message_body}<!-- SMS_GENERATED -->",
-            'contentType': 'html',
-            'isPublic': True
+            'content': f"{message_body}",
+            'contentType': 'plainText',
+            'isPublic': False  # Make SMS comments private to avoid webhook triggers
         }
 
         try:
@@ -468,11 +468,12 @@ def send_sms_endpoint():
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
-            # Check for hidden SMS marker in the HTML content
-            raw_content = payload.get('content', '')
-            if '<!-- SMS_GENERATED -->' in raw_content:
-                logging.info(f"Skipping SMS-generated comment: '{comment_content[:50]}...'")
-                return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
+            # SMS comments are marked as private (isPublic: false)
+            is_public = payload.get('isPublic', True)
+
+            if not is_public:
+                logging.info(f"Skipping private comment (SMS): '{comment_content[:50]}...'")
+                return jsonify({'message': 'Private comment skipped - no feedback loop'}), 200
 
             logging.info(f"Parsed from webhook: ticket_id={ticket_id}, content='{comment_content}'")
 
