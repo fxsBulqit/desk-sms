@@ -201,12 +201,8 @@ class ZohoDeskAPI:
             'Content-Type': 'application/json'
         }
 
-        # Format timestamp nicely
-        now = datetime.now()
-        formatted_time = now.strftime("%B %d, %Y at %I:%M %p")
-
         comment_data = {
-            'content': f"📱 **NEW SMS from {phone_number}**\n\n{message_body}\n\n*Received: {formatted_time}*",
+            'content': f"📱 **{phone_number}**\n\n{message_body}",
             'contentType': 'plainText',
             'isPublic': True
         }
@@ -284,11 +280,7 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        # Format timestamp nicely for new tickets too
-        now = datetime.now()
-        formatted_time = now.strftime("%B %d, %Y at %I:%M %p")
-
-        description = f"📱 **SMS received from {phone_number}**\n\n{message_body}\n\n*Received: {formatted_time}*"
+        description = f"📱 **{phone_number}**\n\n{message_body}"
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
@@ -475,7 +467,7 @@ def send_sms_endpoint():
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
-            if comment_content.startswith('📱') or 'NEW SMS from' in comment_content or 'SMS received from' in comment_content:
+            if comment_content.startswith('📱'):
                 logging.info(f"Skipping SMS-generated comment: '{comment_content[:50]}...'")
                 return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
 
