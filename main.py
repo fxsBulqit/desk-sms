@@ -443,6 +443,7 @@ def sms_webhook():
         sender_name = sms_data.get('ProfileName')
 
         logging.info(f"Received SMS from {phone_number} to {receiving_number}: {message_body[:50]}...")
+        logging.info(f"Full Twilio webhook data: From={phone_number}, To={receiving_number}")
 
         # Return quick response to Twilio to avoid timeout
         # Then process ticket creation asynchronously
@@ -562,8 +563,14 @@ def send_sms_endpoint():
 
         # Get the receiving number (which Twilio number they last texted)
         receiving_number = zoho_api.get_latest_receiving_number(ticket_id)
+        logging.info(f"Retrieved receiving number: {receiving_number} for ticket {ticket_id}")
 
         # Send SMS from the same number they texted
+        if receiving_number:
+            logging.info(f"Sending SMS from {receiving_number} to {phone_number}")
+        else:
+            logging.warning(f"No receiving number found, using messaging service fallback")
+
         result = twilio_api.send_sms(phone_number, comment_content, receiving_number)
 
         if result['success']:
