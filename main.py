@@ -176,6 +176,9 @@ class ZohoDeskAPI:
                 ticket = response.json()
                 description = ticket.get('description', '')
 
+                # Debug: Log the ticket description
+                logging.info(f"DEBUG: Ticket description: '{description[:200]}...'")
+
                 # Extract receiving number from description
                 import re
                 desc_match = re.search(r'<!-- RECEIVING_NUMBER:(\+\d{10,15}) -->', description)
@@ -183,6 +186,8 @@ class ZohoDeskAPI:
                     receiving_number = desc_match.group(1)
                     logging.info(f"Found receiving number {receiving_number} in ticket description")
                     return receiving_number
+                else:
+                    logging.info(f"DEBUG: No receiving number found in ticket description")
 
             # If not in description, check comments (most recent first)
             comments_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/comments"
@@ -190,6 +195,7 @@ class ZohoDeskAPI:
 
             if response.status_code == 200:
                 comments = response.json().get('data', [])
+                logging.info(f"DEBUG: Found {len(comments)} comments to check")
 
                 # Sort comments by creation time (newest first)
                 comments.sort(key=lambda x: x.get('commentedTime', ''), reverse=True)
@@ -197,13 +203,21 @@ class ZohoDeskAPI:
                 # Look for SMS comments with receiving number metadata
                 for comment in comments:
                     content = comment.get('content', '')
+                    comment_id = comment.get('id')
+                    logging.info(f"DEBUG: Checking comment {comment_id}: '{content[:100]}...'")
+
                     if '📱' in content and 'RECEIVING_NUMBER:' in content:
+                        logging.info(f"DEBUG: Found SMS comment with metadata in {comment_id}")
                         import re
                         match = re.search(r'<!-- RECEIVING_NUMBER:(\+\d{10,15}) -->', content)
                         if match:
                             receiving_number = match.group(1)
                             logging.info(f"Found receiving number {receiving_number} in recent comment")
                             return receiving_number
+                        else:
+                            logging.warning(f"DEBUG: Found RECEIVING_NUMBER in comment but regex failed: '{content}'")
+                    else:
+                        logging.info(f"DEBUG: Comment {comment_id} is not an SMS comment")
 
             logging.warning(f"No receiving number found for ticket {ticket_id}")
             return None
