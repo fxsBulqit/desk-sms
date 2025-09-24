@@ -164,32 +164,12 @@ class ZohoDeskAPI:
         self.ensure_valid_token()
 
         try:
-            # First check ticket description for receiving number
-            ticket_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
+            # Check comments first (most recent first) for latest receiving number
             headers = {
                 'Authorization': f'Zoho-oauthtoken {self.access_token}',
                 'orgId': self.org_id
             }
 
-            response = requests.get(ticket_url, headers=headers, timeout=30)
-            if response.status_code == 200:
-                ticket = response.json()
-                description = ticket.get('description', '')
-
-                # Debug: Log the ticket description
-                logging.info(f"DEBUG: Ticket description: '{description[:200]}...'")
-
-                # Extract receiving number from description (📱+3126673047 format)
-                import re
-                desc_match = re.search(r'📱(\+\d{10,15})', description)
-                if desc_match:
-                    receiving_number = desc_match.group(1)
-                    logging.info(f"Found receiving number {receiving_number} in ticket description")
-                    return receiving_number
-                else:
-                    logging.info(f"DEBUG: No receiving number found in ticket description")
-
-            # If not in description, check comments (most recent first)
             comments_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/comments"
             response = requests.get(comments_url, headers=headers, timeout=30)
 
@@ -218,6 +198,24 @@ class ZohoDeskAPI:
                             logging.warning(f"DEBUG: Found SMS comment but regex failed: '{content}'")
                     else:
                         logging.info(f"DEBUG: Comment {comment_id} is not an SMS comment")
+
+            # Fallback: check ticket description if no SMS comments found
+            logging.info("DEBUG: No SMS comments found, checking ticket description as fallback")
+            ticket_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
+            response = requests.get(ticket_url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                ticket = response.json()
+                description = ticket.get('description', '')
+                logging.info(f"DEBUG: Ticket description: '{description[:200]}...'")
+
+                # Extract receiving number from description (📱+3126673047 format)
+                import re
+                desc_match = re.search(r'📱(\+\d{10,15})', description)
+                if desc_match:
+                    receiving_number = desc_match.group(1)
+                    logging.info(f"Found receiving number {receiving_number} in ticket description (fallback)")
+                    return receiving_number
 
             logging.warning(f"No receiving number found for ticket {ticket_id}")
             return None
