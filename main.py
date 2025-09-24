@@ -22,23 +22,31 @@ class TwilioSMS:
 
     def send_sms(self, to_phone, message_body, from_phone=None):
         """Send SMS using specific Twilio number or fallback to Messaging Service"""
+        logging.info(f"🚀 send_sms called: to='{to_phone}', from='{from_phone}', body_length={len(message_body)}")
+
         try:
             if from_phone:
                 # Send from specific number (for conversation continuity)
+                logging.info(f"📞 Using specific Twilio number: {from_phone}")
                 message = self.client.messages.create(
                     from_=from_phone,
                     body=message_body,
                     to=to_phone
                 )
-                logging.info(f"SMS sent from {from_phone} to {to_phone}: {message.sid}")
+                logging.info(f"✅ SMS sent from {from_phone} to {to_phone}: {message.sid}")
+                # Log the actual numbers used by Twilio
+                logging.info(f"📋 Twilio response - From: {message.from_}, To: {message.to}")
             else:
                 # Fallback to messaging service
+                logging.info(f"📞 Using messaging service fallback (SID: {self.messaging_service_sid})")
                 message = self.client.messages.create(
                     messaging_service_sid=self.messaging_service_sid,
                     body=message_body,
                     to=to_phone
                 )
-                logging.info(f"SMS sent via messaging service to {to_phone}: {message.sid}")
+                logging.info(f"✅ SMS sent via messaging service to {to_phone}: {message.sid}")
+                # Log the actual numbers used by Twilio
+                logging.info(f"📋 Twilio response - From: {message.from_}, To: {message.to}")
 
             return {
                 'success': True,
@@ -445,6 +453,11 @@ def sms_webhook():
         logging.info(f"Received SMS from {phone_number} to {receiving_number}: {message_body[:50]}...")
         logging.info(f"Full Twilio webhook data: From={phone_number}, To={receiving_number}")
 
+        # Debug: Log all webhook fields to understand Twilio's format
+        logging.info(f"Complete Twilio webhook payload: {dict(sms_data)}")
+        logging.info(f"Raw 'To' field value: '{receiving_number}' (type: {type(receiving_number)})")
+        logging.info(f"Raw 'From' field value: '{phone_number}' (type: {type(phone_number)})")
+
         # Return quick response to Twilio to avoid timeout
         # Then process ticket creation asynchronously
 
@@ -563,11 +576,16 @@ def send_sms_endpoint():
 
         # Get the receiving number (which Twilio number they last texted)
         receiving_number = zoho_api.get_latest_receiving_number(ticket_id)
-        logging.info(f"Retrieved receiving number: {receiving_number} for ticket {ticket_id}")
+        logging.info(f"Retrieved receiving number: '{receiving_number}' for ticket {ticket_id} (type: {type(receiving_number)})")
 
         # Send SMS from the same number they texted
         if receiving_number:
-            logging.info(f"Sending SMS from {receiving_number} to {phone_number}")
+            logging.info(f"Sending SMS from '{receiving_number}' to '{phone_number}' (lengths: from={len(receiving_number) if receiving_number else 0}, to={len(phone_number) if phone_number else 0})")
+            # Validate the receiving number format
+            if receiving_number.startswith('+') and len(receiving_number) >= 11:
+                logging.info(f"✅ Receiving number format looks correct: {receiving_number}")
+            else:
+                logging.warning(f"⚠️ Receiving number format may be incorrect: {receiving_number}")
         else:
             logging.warning(f"No receiving number found, using messaging service fallback")
 
