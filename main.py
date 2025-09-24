@@ -179,9 +179,9 @@ class ZohoDeskAPI:
                 # Debug: Log the ticket description
                 logging.info(f"DEBUG: Ticket description: '{description[:200]}...'")
 
-                # Extract receiving number from description
+                # Extract receiving number from description (📱+3126673047 format)
                 import re
-                desc_match = re.search(r'<!-- RECEIVING_NUMBER:(\+\d{10,15}) -->', description)
+                desc_match = re.search(r'📱(\+\d{10,15})', description)
                 if desc_match:
                     receiving_number = desc_match.group(1)
                     logging.info(f"Found receiving number {receiving_number} in ticket description")
@@ -200,22 +200,22 @@ class ZohoDeskAPI:
                 # Sort comments by creation time (newest first)
                 comments.sort(key=lambda x: x.get('commentedTime', ''), reverse=True)
 
-                # Look for SMS comments with receiving number metadata
+                # Look for SMS comments with embedded receiving number (📱+3126673047 format)
                 for comment in comments:
                     content = comment.get('content', '')
                     comment_id = comment.get('id')
                     logging.info(f"DEBUG: Checking comment {comment_id}: '{content[:100]}...'")
 
-                    if '📱' in content and 'RECEIVING_NUMBER:' in content:
-                        logging.info(f"DEBUG: Found SMS comment with metadata in {comment_id}")
+                    if content.startswith('📱+'):
+                        logging.info(f"DEBUG: Found SMS comment with embedded number in {comment_id}")
                         import re
-                        match = re.search(r'<!-- RECEIVING_NUMBER:(\+\d{10,15}) -->', content)
+                        match = re.search(r'📱(\+\d{10,15})', content)
                         if match:
                             receiving_number = match.group(1)
                             logging.info(f"Found receiving number {receiving_number} in recent comment")
                             return receiving_number
                         else:
-                            logging.warning(f"DEBUG: Found RECEIVING_NUMBER in comment but regex failed: '{content}'")
+                            logging.warning(f"DEBUG: Found SMS comment but regex failed: '{content}'")
                     else:
                         logging.info(f"DEBUG: Comment {comment_id} is not an SMS comment")
 
@@ -287,10 +287,10 @@ class ZohoDeskAPI:
             'Content-Type': 'application/json'
         }
 
-        # Add subtle identifier for SMS comments with receiving number metadata
+        # Add SMS comment with receiving number embedded
         comment_data = {
-            'content': f"📱 {message_body}<!-- RECEIVING_NUMBER:{receiving_number} -->",
-            'contentType': 'html',  # Changed to html to support hidden metadata
+            'content': f"📱{receiving_number} {message_body}",
+            'contentType': 'plain',
             'isPublic': False
         }
 
@@ -367,7 +367,7 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        description = f"📱 {message_body}<!-- RECEIVING_NUMBER:{receiving_number} -->"
+        description = f"📱{receiving_number} {message_body}"
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
@@ -563,8 +563,8 @@ def send_sms_endpoint():
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
-            # Check if comment starts with SMS emoji identifier
-            if comment_content.startswith('📱'):
+            # Check if comment starts with SMS emoji identifier (📱+number format)
+            if comment_content.startswith('📱+'):
                 logging.info(f"Skipping SMS comment: '{comment_content[:50]}...'")
                 return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
 
