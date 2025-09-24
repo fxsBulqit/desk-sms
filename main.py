@@ -186,10 +186,10 @@ class ZohoDeskAPI:
                     comment_id = comment.get('id')
                     logging.info(f"DEBUG: Checking comment {comment_id}: '{content[:100]}...'")
 
-                    if content.startswith('📱+'):
+                    if content.startswith('📞 to'):
                         logging.info(f"DEBUG: Found SMS comment with embedded number in {comment_id}")
                         import re
-                        match = re.search(r'📱(\+\d{10,15})', content)
+                        match = re.search(r'📞 to (\+\d{10,15})', content)
                         if match:
                             receiving_number = match.group(1)
                             logging.info(f"Found receiving number {receiving_number} in recent comment")
@@ -209,9 +209,9 @@ class ZohoDeskAPI:
                 description = ticket.get('description', '')
                 logging.info(f"DEBUG: Ticket description: '{description[:200]}...'")
 
-                # Extract receiving number from description (📱+3126673047 format)
+                # Extract receiving number from description (📞 to +3126673047 • format)
                 import re
-                desc_match = re.search(r'📱(\+\d{10,15})', description)
+                desc_match = re.search(r'📞 to (\+\d{10,15})', description)
                 if desc_match:
                     receiving_number = desc_match.group(1)
                     logging.info(f"Found receiving number {receiving_number} in ticket description (fallback)")
@@ -287,7 +287,7 @@ class ZohoDeskAPI:
 
         # Add SMS comment with receiving number embedded
         comment_data = {
-            'content': f"📱{receiving_number} {message_body}",
+            'content': f"📞 to {receiving_number} • {message_body}",
             'isPublic': False
         }
 
@@ -364,7 +364,7 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        description = f"📱{receiving_number} {message_body}"
+        description = f"📞 to {receiving_number} • {message_body}"
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
@@ -560,8 +560,8 @@ def send_sms_endpoint():
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
-            # Check if comment starts with SMS emoji identifier (📱+number format)
-            if comment_content.startswith('📱+'):
+            # Check if comment starts with SMS emoji identifier (📞 to number format)
+            if comment_content.startswith('📞 to'):
                 logging.info(f"Skipping SMS comment: '{comment_content[:50]}...'")
                 return jsonify({'message': 'SMS comment skipped - no feedback loop'}), 200
 
