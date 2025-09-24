@@ -290,7 +290,7 @@ class ZohoDeskAPI:
         # Add SMS comment with receiving number embedded
         comment_data = {
             'content': f"📱{receiving_number} {message_body}",
-            'contentType': 'plain',
+            'contentType': 'html',
             'isPublic': False
         }
 
