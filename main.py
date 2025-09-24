@@ -463,8 +463,10 @@ def send_sms_endpoint():
             ticket_id = payload.get('ticketId')
             # Strip HTML from comment content to get plain text
             import re
+            import html
             comment_content = payload.get('content', '')
             comment_content = re.sub('<[^<]+?>', '', comment_content)  # Remove HTML tags
+            comment_content = html.unescape(comment_content)  # Decode HTML entities like &nbsp;
             comment_content = comment_content.strip()
 
             # Skip SMS-generated comments to avoid feedback loops
