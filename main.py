@@ -20,20 +20,31 @@ class TwilioSMS:
 
         self.client = Client(self.account_sid, self.auth_token)
 
-    def send_sms(self, to_phone, message_body):
-        """Send SMS using Twilio Messaging Service"""
+    def send_sms(self, to_phone, message_body, from_phone=None):
+        """Send SMS using specific Twilio number or fallback to Messaging Service"""
         try:
-            message = self.client.messages.create(
-                messaging_service_sid=self.messaging_service_sid,
-                body=message_body,
-                to=to_phone
-            )
+            if from_phone:
+                # Send from specific number (for conversation continuity)
+                message = self.client.messages.create(
+                    from_=from_phone,
+                    body=message_body,
+                    to=to_phone
+                )
+                logging.info(f"SMS sent from {from_phone} to {to_phone}: {message.sid}")
+            else:
+                # Fallback to messaging service
+                message = self.client.messages.create(
+                    messaging_service_sid=self.messaging_service_sid,
+                    body=message_body,
+                    to=to_phone
+                )
+                logging.info(f"SMS sent via messaging service to {to_phone}: {message.sid}")
 
-            logging.info(f"SMS sent successfully to {to_phone}: {message.sid}")
             return {
                 'success': True,
                 'message_sid': message.sid,
-                'to': to_phone
+                'to': to_phone,
+                'from': from_phone or 'messaging_service'
             }
         except Exception as e:
             logging.error(f"Failed to send SMS to {to_phone}: {str(e)}")
@@ -140,6 +151,59 @@ class ZohoDeskAPI:
             logging.error(f"Error getting ticket {ticket_id}: {str(e)}")
             return None
 
+    def get_latest_receiving_number(self, ticket_id):
+        """Get the most recent Twilio number that received SMS for this ticket"""
+        self.ensure_valid_token()
+
+        try:
+            # First check ticket description for receiving number
+            ticket_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
+            headers = {
+                'Authorization': f'Zoho-oauthtoken {self.access_token}',
+                'orgId': self.org_id
+            }
+
+            response = requests.get(ticket_url, headers=headers, timeout=30)
+            if response.status_code == 200:
+                ticket = response.json()
+                description = ticket.get('description', '')
+
+                # Extract receiving number from description
+                import re
+                desc_match = re.search(r'<!-- RECEIVING_NUMBER:(\+\d{10,15}) -->', description)
+                if desc_match:
+                    receiving_number = desc_match.group(1)
+                    logging.info(f"Found receiving number {receiving_number} in ticket description")
+                    return receiving_number
+
+            # If not in description, check comments (most recent first)
+            comments_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/comments"
+            response = requests.get(comments_url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                comments = response.json().get('data', [])
+
+                # Sort comments by creation time (newest first)
+                comments.sort(key=lambda x: x.get('commentedTime', ''), reverse=True)
+
+                # Look for SMS comments with receiving number metadata
+                for comment in comments:
+                    content = comment.get('content', '')
+                    if '📱' in content and 'RECEIVING_NUMBER:' in content:
+                        import re
+                        match = re.search(r'<!-- RECEIVING_NUMBER:(\+\d{10,15}) -->', content)
+                        if match:
+                            receiving_number = match.group(1)
+                            logging.info(f"Found receiving number {receiving_number} in recent comment")
+                            return receiving_number
+
+            logging.warning(f"No receiving number found for ticket {ticket_id}")
+            return None
+
+        except Exception as e:
+            logging.error(f"Error getting receiving number for ticket {ticket_id}: {str(e)}")
+            return None
+
     def search_tickets_by_phone(self, phone_number):
         """Search for existing tickets by phone number"""
         self.ensure_valid_token()
@@ -188,7 +252,7 @@ class ZohoDeskAPI:
             logging.error(f"Error searching tickets: {str(e)}")
             return []
 
-    def add_comment_to_ticket(self, ticket_id, message_body, phone_number):
+    def add_comment_to_ticket(self, ticket_id, message_body, phone_number, receiving_number):
         """Add SMS as comment to existing ticket and reopen/prioritize it"""
         self.ensure_valid_token()
 
@@ -201,10 +265,10 @@ class ZohoDeskAPI:
             'Content-Type': 'application/json'
         }
 
-        # Add subtle identifier for SMS comments
+        # Add subtle identifier for SMS comments with receiving number metadata
         comment_data = {
-            'content': f"📱 {message_body}",
-            'contentType': 'plainText',
+            'content': f"📱 {message_body}<!-- RECEIVING_NUMBER:{receiving_number} -->",
+            'contentType': 'html',  # Changed to html to support hidden metadata
             'isPublic': False
         }
 
@@ -264,7 +328,7 @@ class ZohoDeskAPI:
                 'error': str(e)
             }
 
-    def create_ticket_from_sms(self, phone_number, message_body, sender_name=None):
+    def create_ticket_from_sms(self, phone_number, message_body, receiving_number, sender_name=None):
         """Create a ticket in Zoho Desk from SMS data"""
         self.ensure_valid_token()
 
@@ -281,7 +345,7 @@ class ZohoDeskAPI:
         if sender_name:
             subject = f"SMS from {sender_name} ({phone_number})"
 
-        description = f"📱 {message_body}"
+        description = f"📱 {message_body}<!-- RECEIVING_NUMBER:{receiving_number} -->"
 
         # Create contact name from phone number if no name provided
         contact_name = sender_name if sender_name else f"SMS Customer {phone_number}"
@@ -374,10 +438,11 @@ def sms_webhook():
         sms_data = request.form if request.form else request.get_json()
 
         phone_number = sms_data.get('From', 'Unknown')
+        receiving_number = sms_data.get('To', 'Unknown')  # Which Twilio number they texted
         message_body = sms_data.get('Body', '')
         sender_name = sms_data.get('ProfileName')
 
-        logging.info(f"Received SMS from {phone_number}: {message_body[:50]}...")
+        logging.info(f"Received SMS from {phone_number} to {receiving_number}: {message_body[:50]}...")
 
         # Return quick response to Twilio to avoid timeout
         # Then process ticket creation asynchronously
@@ -392,7 +457,7 @@ def sms_webhook():
             ticket_number = most_recent_ticket['ticketNumber']
 
             logging.info(f"Adding SMS to existing ticket #{ticket_number} (ID: {ticket_id})")
-            result = api.add_comment_to_ticket(ticket_id, message_body, phone_number)
+            result = api.add_comment_to_ticket(ticket_id, message_body, phone_number, receiving_number)
 
             if result['success']:
                 logging.info(f"SMS added as comment to ticket #{ticket_number}")
@@ -406,11 +471,11 @@ def sms_webhook():
             else:
                 # Fall back to creating new ticket if comment fails
                 logging.warning(f"Failed to add comment, creating new ticket instead")
-                result = api.create_ticket_from_sms(phone_number, message_body, sender_name)
+                result = api.create_ticket_from_sms(phone_number, message_body, receiving_number, sender_name)
         else:
             # No existing tickets, create new one
             logging.info(f"No existing tickets found for {phone_number}, creating new ticket")
-            result = api.create_ticket_from_sms(phone_number, message_body, sender_name)
+            result = api.create_ticket_from_sms(phone_number, message_body, receiving_number, sender_name)
 
         if result['success']:
             logging.info(f"Ticket created successfully: #{result['ticket_number']}")
@@ -495,8 +560,11 @@ def send_sms_endpoint():
         if not phone_number:
             return jsonify({'error': 'No phone number found for this ticket'}), 400
 
-        # Send SMS
-        result = twilio_api.send_sms(phone_number, comment_content)
+        # Get the receiving number (which Twilio number they last texted)
+        receiving_number = zoho_api.get_latest_receiving_number(ticket_id)
+
+        # Send SMS from the same number they texted
+        result = twilio_api.send_sms(phone_number, comment_content, receiving_number)
 
         if result['success']:
             logging.info(f"SMS reply sent to {phone_number} for ticket {ticket_id}")
