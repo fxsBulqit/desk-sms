@@ -5,9 +5,116 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import logging
 from twilio.rest import Client
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import html
+import re
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+def send_email_notification(ticket_data):
+    """Send email notification for new SMS tickets"""
+    try:
+        # Email configuration (same as voicemail system)
+        sender_email = "ai.ferdy.sal@gmail.com"
+        sender_password = os.environ.get("SENDER_PASSWORD")
+        recipient_email = "fxs@bulqit.com"  # Testing only
+
+        if not sender_password:
+            logging.warning("SENDER_PASSWORD not set - skipping email notification")
+            return
+
+        # Format phone number for display: (224) 500-4255
+        def format_phone_display(number):
+            match = re.match(r"\+1(\d{3})(\d{3})(\d{4})", number)
+            if match:
+                return f"({match.group(1)}) {match.group(2)}-{match.group(3)}"
+            return number
+
+        # Extract data
+        ticket_number = ticket_data.get('ticketNumber', 'Unknown')
+        customer_phone = ticket_data.get('customer_phone', 'Unknown')
+        customer_name = ticket_data.get('customer_name', f"SMS Customer {customer_phone}")
+        receiving_number = ticket_data.get('receiving_number', 'Unknown')
+        message_body = ticket_data.get('message_body', '')
+        ticket_url = f"https://desk.zoho.com/agent/tickets/{ticket_data.get('id', '')}"
+        timestamp = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+
+        # Format phone numbers
+        customer_display = format_phone_display(customer_phone)
+        receiving_display = format_phone_display(receiving_number)
+
+        # Email subject and content
+        subject = f"🔔 New SMS Support Ticket #{ticket_number} from {customer_display}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
+                .header {{ background: #007bff; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; }}
+                .ticket-info {{ background: #f8f9fa; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0; }}
+                .message-box {{ background: #e9ecef; padding: 15px; border-radius: 5px; margin: 15px 0; }}
+                .footer {{ background: #6c757d; color: white; padding: 15px; text-align: center; font-size: 12px; }}
+                .button {{ background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>📱 New SMS Support Request</h2>
+            </div>
+
+            <div class="content">
+                <p>A new SMS support ticket has been created and requires attention.</p>
+
+                <div class="ticket-info">
+                    <h3>📋 Ticket Details</h3>
+                    <p><strong>Ticket #:</strong> {ticket_number}</p>
+                    <p><strong>Customer:</strong> {customer_name}</p>
+                    <p><strong>Phone:</strong> {customer_display}</p>
+                    <p><strong>Received on:</strong> {receiving_display}</p>
+                    <p><strong>Created:</strong> {timestamp}</p>
+                </div>
+
+                <div class="message-box">
+                    <h4>💬 Customer Message</h4>
+                    <p><em>"{html.escape(message_body)}"</em></p>
+                </div>
+
+                <a href="{ticket_url}" class="button">🎫 View Ticket in Zoho Desk</a>
+
+                <hr>
+                <p><small>💡 <strong>Tip:</strong> Reply directly in Zoho Desk and your response will be sent as SMS to the customer from {receiving_display}.</small></p>
+            </div>
+
+            <div class="footer">
+                <p>Bulqit SMS Support System | Powered by Zoho Desk + Twilio</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Create email
+        msg = MIMEMultipart()
+        msg["Subject"] = subject
+        msg["From"] = f"Desk Notification <{sender_email}>"
+        msg["To"] = recipient_email
+        msg.attach(MIMEText(html_content, "html"))
+
+        # Send email
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, [recipient_email], msg.as_string())
+
+        logging.info(f"✅ Email notification sent for ticket #{ticket_number}")
+
+    except Exception as e:
+        logging.error(f"❌ Email notification failed: {str(e)}")
+        # Don't fail the SMS processing if email fails
 
 class TwilioSMS:
     def __init__(self):
@@ -389,6 +496,21 @@ class ZohoDeskAPI:
 
             if response.status_code == 200 and 'id' in result:
                 logging.info(f"Successfully created ticket {result['ticketNumber']} (ID: {result['id']})")
+
+                # Send email notification for new ticket
+                try:
+                    notification_data = {
+                        'id': result['id'],
+                        'ticketNumber': result['ticketNumber'],
+                        'customer_phone': phone_number,
+                        'customer_name': sender_name if sender_name else f"SMS Customer {phone_number}",
+                        'receiving_number': receiving_number,
+                        'message_body': message_body
+                    }
+                    send_email_notification(notification_data)
+                except Exception as e:
+                    logging.error(f"Email notification failed for ticket {result['ticketNumber']}: {str(e)}")
+
                 return {
                     'success': True,
                     'ticket_id': result['id'],
