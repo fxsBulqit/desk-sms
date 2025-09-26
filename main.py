@@ -55,7 +55,7 @@ def send_email_notification(ticket_data):
         <head>
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
-                .header {{ background: #007bff; color: white; padding: 20px; text-align: center; }}
+                .header {{ color: #333; padding: 20px; text-align: center; border-bottom: 1px solid #ddd; }}
                 .content {{ padding: 20px; }}
                 .ticket-info {{ background: #f8f9fa; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0; }}
                 .message-box {{ background: #e9ecef; padding: 15px; border-radius: 5px; margin: 15px 0; }}
@@ -85,10 +85,6 @@ def send_email_notification(ticket_data):
                     <p><em>"{html.escape(message_body)}"</em></p>
                 </div>
 
-                <a href="{ticket_url}" class="button">🎫 View Ticket in Zoho Desk</a>
-
-                <hr>
-                <p><small>💡 <strong>Tip:</strong> Reply directly in Zoho Desk and your response will be sent as SMS to the customer from {receiving_display}.</small></p>
             </div>
 
             <div class="footer">
@@ -404,6 +400,25 @@ class ZohoDeskAPI:
 
             if comment_response.status_code == 200 and 'id' in comment_result:
                 logging.info(f"Successfully added comment to ticket {ticket_id}")
+
+                # Send email notification for comment to existing ticket
+                try:
+                    # Get ticket details for the notification
+                    ticket_details_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
+                    ticket_response = requests.get(ticket_details_url, headers=headers, timeout=30)
+                    if ticket_response.status_code == 200:
+                        ticket_info = ticket_response.json()
+                        notification_data = {
+                            'id': ticket_id,
+                            'ticketNumber': ticket_info.get('ticketNumber', 'Unknown'),
+                            'customer_phone': phone_number,
+                            'customer_name': f"SMS Customer {phone_number}",
+                            'receiving_number': receiving_number,
+                            'message_body': message_body
+                        }
+                        send_email_notification(notification_data)
+                except Exception as e:
+                    logging.error(f"Email notification failed for comment on ticket {ticket_id}: {str(e)}")
 
                 # Now update the ticket to make it visible
                 ticket_url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}"
