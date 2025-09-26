@@ -20,7 +20,7 @@ def send_email_notification(ticket_data):
         # Email configuration (same as voicemail system)
         sender_email = "ai.ferdy.sal@gmail.com"
         sender_password = os.environ.get("SENDER_PASSWORD")
-        recipient_email = "fxs@bulqit.com"  # Testing only
+        recipient_email = "support@gmail.com"
 
         if not sender_password:
             logging.warning("SENDER_PASSWORD not set - skipping email notification")
@@ -47,7 +47,7 @@ def send_email_notification(ticket_data):
         receiving_display = format_phone_display(receiving_number)
 
         # Email subject and content
-        subject = f"🔔 New SMS Support Ticket #{ticket_number} from {customer_display}"
+        subject = f"New SMS Support Ticket #{ticket_number} from {customer_display}"
 
         html_content = f"""
         <!DOCTYPE html>
@@ -65,14 +65,14 @@ def send_email_notification(ticket_data):
         </head>
         <body>
             <div class="header">
-                <h2>📱 New SMS Support Request</h2>
+                <h2>New SMS Support Request</h2>
             </div>
 
             <div class="content">
                 <p>A new SMS support ticket has been created and requires attention.</p>
 
                 <div class="ticket-info">
-                    <h3>📋 Ticket Details</h3>
+                    <h3>Ticket Details</h3>
                     <p><strong>Ticket #:</strong> {ticket_number}</p>
                     <p><strong>Customer:</strong> {customer_name}</p>
                     <p><strong>Phone:</strong> {customer_display}</p>
@@ -81,7 +81,7 @@ def send_email_notification(ticket_data):
                 </div>
 
                 <div class="message-box">
-                    <h4>💬 Customer Message</h4>
+                    <h4>Customer Message</h4>
                     <p><em>"{html.escape(message_body)}"</em></p>
                 </div>
 
