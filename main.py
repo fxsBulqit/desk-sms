@@ -20,7 +20,7 @@ def send_email_notification(ticket_data):
         # Email configuration (same as voicemail system)
         sender_email = "ai.ferdy.sal@gmail.com"
         sender_password = os.environ.get("SENDER_PASSWORD")
-        recipient_email = "support@gmail.com"
+        recipient_email = "support@bulqit.com"
 
         if not sender_password:
             logging.warning("SENDER_PASSWORD not set - skipping email notification")
